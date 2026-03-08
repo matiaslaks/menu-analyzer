@@ -1,9 +1,6 @@
 [build]
 builder = "nixpacks"
-
-[build.buildCommand]
-# Instala dependencias Python + navegador Chromium para Playwright
-cmd = "pip install -r requirements.txt && playwright install chromium && playwright install-deps chromium"
+buildCommand = "pip install -r requirements.txt && playwright install chromium && playwright install-deps chromium"
 
 [deploy]
 startCommand = "python server.py"
