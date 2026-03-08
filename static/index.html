@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Menu Analyzer — powered by AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Nunito:wght@800;900&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: {
+        colors: {
+          rappi: { DEFAULT:'#FF441A', dark:'#D93610', light:'#FF6B35', bg:'#FFF3F0' },
+          dark:  { DEFAULT:'#1A1A2E', 800:'#16213E', 700:'#0F3460' },
+        },
+        fontFamily: { sans: ['Inter','sans-serif'] },
+        boxShadow: {
+          card: '0 2px 16px rgba(0,0,0,0.08)',
+          'card-hover': '0 8px 32px rgba(0,0,0,0.14)',
+          orange: '0 4px 20px rgba(255,68,26,0.35)',
+        }
+      }}
+    }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body { font-family: 'Inter', sans-serif; background: #F7F7F8; }
+
+    /* ── Drop zone ── */
+    #drop-zone { transition: all .2s; }
+    #drop-zone.drag-over { border-color:#FF441A; background:#FFF3F0; transform:scale(1.01); }
+
+    /* ── Thumbnails ── */
+    .thumb-item { position:relative; aspect-ratio:1; border-radius:.75rem; overflow:hidden; background:#eee; }
+    .thumb-item img { width:100%; height:100%; object-fit:cover; }
+    .thumb-remove { position:absolute; top:5px; right:5px; background:rgba(26,26,46,.7); border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:white; font-size:11px; transition:background .15s; }
+    .thumb-remove:hover { background:#FF441A; }
+
+    /* ── Markdown ── */
+    .md-body h1 { font-size:1.3rem; font-weight:800; margin-top:1.6rem; margin-bottom:.5rem; color:#1A1A2E; }
+    .md-body h2 { font-size:1.05rem; font-weight:700; margin-top:1.4rem; margin-bottom:.4rem; color:#1A1A2E; padding-bottom:.3rem; border-bottom:2px solid #FFF3F0; }
+    .md-body h3 { font-size:.9rem; font-weight:700; margin-top:1rem; margin-bottom:.3rem; color:#FF441A; }
+    .md-body ul { list-style:disc; padding-left:1.4rem; margin-bottom:.7rem; }
+    .md-body li { margin-bottom:.2rem; line-height:1.6; }
+    .md-body p { margin-bottom:.6rem; line-height:1.7; color:#374151; }
+    .md-body strong { color:#1A1A2E; font-weight:700; }
+    .md-body table { width:100%; border-collapse:collapse; font-size:.73rem; margin-bottom:1.2rem; table-layout:fixed; }
+    .md-body th { background:#1A1A2E; color:white; padding:6px 8px; text-align:left; font-weight:600; font-size:.68rem; letter-spacing:.02em; text-transform:uppercase; word-break:break-word; }
+    .md-body td { padding:6px 8px; border-bottom:1px solid #F3F4F6; vertical-align:top; line-height:1.4; word-break:break-word; }
+    .md-body tr:nth-child(even) td { background:#FAFAFA; }
+    .md-body tr:hover td { background:#FFF3F0; }
+
+    /* Cards para tabla de Rappi */
+    .resto-card { background:#F8F9FA; border:1.5px solid #E5E7EB; border-radius:1rem; padding:14px 16px; }
+    .resto-card.main-card { background:#FFF3F0; border-color:#FECACA; }
+    .resto-stat { display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid rgba(0,0,0,.05); font-size:.78rem; }
+    .resto-stat:last-child { border-bottom:none; }
+    .resto-stat-label { color:#6B7280; font-weight:500; }
+    .resto-stat-value { font-weight:700; color:#1A1A2E; }
+    .cat-pills { display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
+    .cat-pill { font-size:.68rem; font-weight:600; padding:2px 8px; border-radius:999px; background:white; border:1px solid #E5E7EB; color:#374151; }
+
+    /* ── Cursors ── */
+    #cursor, #rappi-cursor { display:inline-block; width:3px; height:1.1em; background:#FF441A; margin-left:2px; vertical-align:text-bottom; animation:blink .9s step-end infinite; border-radius:2px; }
+    @keyframes blink { 50%{opacity:0} }
+
+    /* ── Badges ── */
+    .stat-badge { display:inline-flex; align-items:center; gap:5px; background:#FFF3F0; border:1.5px solid #FECACA; border-radius:999px; padding:4px 12px; font-size:.75rem; color:#D93610; font-weight:600; }
+
+    /* ── Progress bar ── */
+    @keyframes progress-slide { 0%{transform:translateX(-100%);width:40%} 50%{width:60%} 100%{transform:translateX(300%);width:40%} }
+    .progress-bar-inner { animation:progress-slide 1.4s ease infinite; }
+
+    /* ── Tabs ── */
+    .tab-btn { padding:10px 22px; border-radius:999px; font-size:.85rem; font-weight:700; transition:all .2s; cursor:pointer; letter-spacing:.01em; }
+    .tab-active-photo { background:#FF441A; color:white; box-shadow:0 4px 16px rgba(255,68,26,.4); }
+    .tab-active-rappi  { background:#1A1A2E; color:white; box-shadow:0 4px 16px rgba(26,26,46,.4); }
+    .tab-inactive { background:white; color:#6B7280; border:1.5px solid #E5E7EB; }
+    .tab-inactive:hover { border-color:#FF441A; color:#FF441A; }
+
+    /* ── Competitor tag ── */
+    .comp-tag { display:inline-flex; align-items:center; gap:6px; background:#FFF3F0; border:1.5px solid #FECACA; border-radius:999px; padding:5px 14px; font-size:.8rem; color:#D93610; font-weight:600; }
+    .comp-tag button { color:#9CA3AF; cursor:pointer; transition:color .15s; font-size:13px; line-height:1; padding:0 1px; }
+    .comp-tag button:hover { color:#FF441A; }
+
+    /* ── Log ── */
+    .log-line { font-size:.72rem; font-family:'Courier New',monospace; padding:1.5px 0; color:#9CA3AF; }
+    .log-line.ok  { color:#10B981; }
+    .log-line.err { color:#EF4444; }
+
+    /* ── Btn primary ── */
+    .btn-rappi { background:linear-gradient(135deg,#FF441A,#FF6B35); color:white; font-weight:700; border-radius:.85rem; transition:all .2s; box-shadow:0 4px 16px rgba(255,68,26,.3); }
+    .btn-rappi:hover:not(:disabled) { background:linear-gradient(135deg,#D93610,#FF441A); box-shadow:0 6px 24px rgba(255,68,26,.45); transform:translateY(-1px); }
+    .btn-rappi:active:not(:disabled) { transform:translateY(0); }
+    .btn-rappi:disabled { opacity:.45; cursor:not-allowed; box-shadow:none; }
+
+    .btn-dark { background:#1A1A2E; color:white; font-weight:700; border-radius:.85rem; transition:all .2s; }
+    .btn-dark:hover:not(:disabled) { background:#0F3460; transform:translateY(-1px); box-shadow:0 6px 24px rgba(26,26,46,.4); }
+    .btn-dark:disabled { opacity:.4; cursor:not-allowed; }
+
+    /* ── Card ── */
+    .card { background:white; border-radius:1.25rem; box-shadow:0 2px 16px rgba(0,0,0,.07); border:1px solid rgba(0,0,0,.05); }
+
+    /* ── Input ── */
+    .rappi-input { border:1.5px solid #E5E7EB; border-radius:.75rem; padding:10px 14px; font-size:.875rem; transition:border .2s; outline:none; font-family:inherit; width:100%; }
+    .rappi-input:focus { border-color:#FF441A; box-shadow:0 0 0 3px rgba(255,68,26,.12); }
+
+    /* ── Section label ── */
+    .section-label { font-size:.7rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#9CA3AF; }
+
+    /* ── Price index bars ── */
+    .pix-cat-block { margin-bottom:18px; }
+    .pix-cat-title { font-size:.72rem; font-weight:700; color:#374151; margin-bottom:6px; }
+    .pix-bar-row { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    .pix-bar-label { width:108px; min-width:108px; font-size:.72rem; font-weight:600; color:#374151; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .pix-bar-track { flex:1; height:14px; background:#F3F4F6; border-radius:999px; position:relative; overflow:hidden; }
+    .pix-bar-fill { height:100%; border-radius:999px; min-width:3px; transition:width .45s ease; }
+    .pix-ref-line { position:absolute; top:0; bottom:0; width:2px; background:#FF441A; opacity:.7; }
+    .pix-bar-val { font-size:.68rem; font-weight:700; min-width:52px; }
+  </style>
+</head>
+
+<body class="min-h-screen">
+
+  <!-- ══ HEADER ══════════════════════════════════════════════════════════ -->
+  <header style="background:linear-gradient(135deg,#1A1A2E 0%,#16213E 60%,#0F3460 100%)" class="sticky top-0 z-30 shadow-lg">
+    <div class="max-w-3xl mx-auto px-5 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3">
+          <!-- Rappi favicon icon (official CDN) -->
+          <img
+            src="https://images.rappi.com/web/rappi_favicon.png"
+            alt="Rappi"
+            width="34" height="34"
+            style="border-radius:8px;image-rendering:crisp-edges"
+            onerror="this.style.display='none'"
+          />
+          <!-- Rappi wordmark — Nunito 900 matches Rappi's custom font -->
+          <span style="font-family:'Nunito',sans-serif;font-weight:900;font-size:1.45rem;color:white;letter-spacing:-.02em;line-height:1">rappi</span>
+
+          <div style="width:1px;height:24px;background:rgba(255,255,255,.2)"></div>
+
+          <div>
+            <p style="font-family:'Nunito',sans-serif;font-weight:800;font-size:.85rem;color:white;letter-spacing:-.01em;line-height:1.2">Menu<span style="color:#FF441A">Analyzer</span></p>
+            <p class="text-xs" style="color:#94A3B8;margin-top:1px">powered by Claude AI</p>
+          </div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 text-xs font-semibold" style="color:#94A3B8">
+        <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+        Online
+      </div>
+    </div>
+  </header>
+
+  <!-- ══ TABS ════════════════════════════════════════════════════════════ -->
+  <div class="max-w-3xl mx-auto px-5 pt-6 pb-2">
+    <div class="flex gap-2 p-1 rounded-2xl w-fit" style="background:#EBEBEB">
+      <button id="tab-rappi-btn" class="tab-btn tab-active-rappi" onclick="switchTab('rappi')">
+        🛵 Comparar en Rappi
+      </button>
+      <button id="tab-photos-btn" class="tab-btn tab-inactive" onclick="switchTab('photos')">
+        📷 Analizar Fotos
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- TAB 1 — FOTOS                                                      -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <div id="tab-photos" class="max-w-3xl mx-auto px-5 py-5 space-y-4 hidden">
+
+    <div class="card p-6 space-y-5">
+      <!-- Hero upload -->
+      <div>
+        <p class="section-label mb-3">Sube las fotos de tu menú</p>
+        <div id="drop-zone"
+          class="border-2 border-dashed rounded-2xl p-10 text-center cursor-pointer"
+          style="border-color:#E5E7EB"
+          onclick="document.getElementById('file-input').click()"
+          onmouseenter="this.style.borderColor='#FF441A';this.style.background='#FFF3F0'"
+          onmouseleave="this.style.borderColor='#E5E7EB';this.style.background=''"
+        >
+          <div class="flex flex-col items-center gap-3 pointer-events-none select-none">
+            <div class="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl" style="background:#FFF3F0">📤</div>
+            <div>
+              <p class="font-700 text-gray-700 text-sm font-bold">Arrastra tus fotos aquí</p>
+              <p class="text-xs text-gray-400 mt-0.5">o <span style="color:#FF441A;text-decoration:underline">busca archivos</span> · JPG, PNG, WebP</p>
+            </div>
+          </div>
+          <input id="file-input" type="file" accept="image/jpeg,image/png,image/webp" multiple class="hidden" onchange="handleFileSelect(this.files)"/>
+        </div>
+      </div>
+
+      <div id="thumb-grid" class="grid grid-cols-6 sm:grid-cols-8 gap-2 hidden"></div>
+      <p id="count-label" class="text-xs text-gray-400 hidden font-medium"></p>
+
+      <button id="analyze-btn" disabled onclick="startPhotoAnalysis()"
+        class="btn-rappi w-full py-3.5 text-sm">
+        ✨ &nbsp;Analizar Menú con IA
+      </button>
+    </div>
+
+    <!-- Progress -->
+    <div id="photo-status" class="hidden card p-4 space-y-3">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center text-base" style="background:#FFF3F0">
+          <span id="photo-status-icon">⏳</span>
+        </div>
+        <div>
+          <p class="text-sm font-700 text-gray-800 font-bold" id="photo-status-text">Iniciando...</p>
+          <p class="text-xs text-gray-400">Procesando con Claude AI</p>
+        </div>
+      </div>
+      <div class="w-full h-1.5 rounded-full overflow-hidden" style="background:#F3F4F6">
+        <div class="progress-bar-inner h-full rounded-full" style="background:linear-gradient(90deg,#FF441A,#FF6B35)"></div>
+      </div>
+    </div>
+
+    <!-- Extraction -->
+    <div id="extraction-card" class="hidden card p-5 space-y-3">
+      <p class="section-label">Datos extraídos del menú</p>
+      <div id="extraction-badges" class="flex flex-wrap gap-2"></div>
+      <p id="extraction-obs" class="text-xs text-gray-400 italic leading-relaxed"></p>
+    </div>
+
+    <!-- Results -->
+    <div id="result-section" class="hidden card p-6">
+      <div class="flex items-center gap-2 mb-5">
+        <div class="w-7 h-7 rounded-lg flex items-center justify-center text-sm" style="background:#FFF3F0">📋</div>
+        <p class="font-bold text-gray-800 text-sm">Análisis y Recomendaciones</p>
+      </div>
+      <div id="result-content" class="md-body text-sm text-gray-700 leading-relaxed">
+        <span id="cursor"></span>
+      </div>
+    </div>
+
+    <!-- Done -->
+    <div id="photo-done" class="hidden rounded-2xl px-5 py-4 flex items-center gap-4" style="background:linear-gradient(135deg,#ECFDF5,#D1FAE5);border:1.5px solid #6EE7B7">
+      <span class="text-2xl">✅</span>
+      <div>
+        <p class="font-bold text-green-800 text-sm">¡Análisis completado!</p>
+        <p class="text-xs text-green-600 mt-0.5">Usa estas recomendaciones para optimizar tu menú y aumentar ventas.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <!-- TAB 2 — RAPPI                                                      -->
+  <!-- ══════════════════════════════════════════════════════════════════ -->
+  <div id="tab-rappi" class="max-w-3xl mx-auto px-5 py-5 space-y-4">
+
+    <!-- Form card -->
+    <div class="card overflow-hidden">
+      <!-- Card header -->
+      <div class="px-6 py-4 flex items-center gap-3" style="background:linear-gradient(135deg,#1A1A2E,#0F3460)">
+        <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style="background:#FF441A">🛵</div>
+        <div>
+          <p class="text-white font-bold text-sm">Comparación Competitiva</p>
+          <p class="text-xs" style="color:#94A3B8">Extracción automática de menús en Rappi Colombia</p>
+        </div>
+      </div>
+
+      <div class="p-6 space-y-5">
+        <!-- City -->
+        <div>
+          <label class="section-label block mb-2">Ciudad</label>
+          <select id="rappi-city" class="rappi-input">
+            <option>Bogotá</option>
+            <option>Medellín</option>
+            <option>Cali</option>
+            <option>Barranquilla</option>
+            <option>Cartagena</option>
+            <option>Bucaramanga</option>
+            <option>Pereira</option>
+            <option>Manizales</option>
+          </select>
+        </div>
+
+        <!-- Main restaurant -->
+        <div>
+          <label class="section-label block mb-2">Tu restaurante <span style="color:#FF441A">(principal)</span></label>
+          <input id="main-restaurant" type="text" placeholder="Ej: El Corral, Crepes & Waffles..." class="rappi-input"/>
+        </div>
+
+        <!-- Competitors -->
+        <div>
+          <label class="section-label block mb-2">Competidores</label>
+          <div class="flex gap-2">
+            <input id="competitor-input" type="text" placeholder="Nombre del competidor..."
+              class="rappi-input flex-1"
+              onkeydown="if(event.key==='Enter')addCompetitor()"/>
+            <button onclick="addCompetitor()"
+              class="btn-rappi px-5 py-2.5 text-sm whitespace-nowrap">
+              + Agregar
+            </button>
+          </div>
+          <div id="competitors-list" class="flex flex-wrap gap-2 mt-3"></div>
+          <p class="text-xs text-gray-400 mt-2">Agrega todos los competidores y presiona <b>Iniciar Comparación</b></p>
+        </div>
+
+        <button id="rappi-btn" onclick="startRappiAnalysis()"
+          class="btn-dark w-full py-3.5 text-sm">
+          🛵 &nbsp;Iniciar Comparación en Rappi
+        </button>
+      </div>
+    </div>
+
+    <!-- Progress + log -->
+    <div id="rappi-status" class="hidden card p-5 space-y-3">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-xl flex items-center justify-center text-base" style="background:#FFF3F0">
+          <span id="rappi-status-icon">🔄</span>
+        </div>
+        <div>
+          <p class="text-sm font-bold text-gray-800" id="rappi-status-text">Iniciando...</p>
+          <p class="text-xs text-gray-400">El navegador se abrirá automáticamente</p>
+        </div>
+      </div>
+      <div class="w-full h-1.5 rounded-full overflow-hidden" style="background:#F3F4F6">
+        <div class="progress-bar-inner h-full rounded-full" style="background:linear-gradient(90deg,#1A1A2E,#0F3460)"></div>
+      </div>
+      <div id="rappi-log" class="rounded-xl p-3 max-h-44 overflow-y-auto space-y-0.5" style="background:#F8F9FA;border:1px solid #E5E7EB"></div>
+    </div>
+
+    <!-- Stats table -->
+    <div id="rappi-table-section" class="hidden card p-5">
+      <p class="section-label mb-4">Datos Extraídos de Rappi</p>
+      <div id="rappi-table" class="overflow-x-auto rounded-xl"></div>
+    </div>
+
+    <!-- Price Index -->
+    <div id="price-index-section" class="hidden card p-5">
+      <p class="section-label mb-1">Índice de Precios por Categoría</p>
+      <p class="text-xs text-gray-400 mb-4">Restaurante principal = <span style="color:#FF441A;font-weight:700">100</span> (línea roja). <span style="color:#10B981;font-weight:600">Verde</span> = más barato · <span style="color:#EF4444;font-weight:600">Rojo</span> = más caro.</p>
+      <div id="price-index-charts"></div>
+    </div>
+
+    <!-- AI Analysis -->
+    <div id="rappi-analysis-section" class="hidden card p-6">
+      <div class="flex items-center gap-2 mb-5">
+        <div class="w-7 h-7 rounded-lg flex items-center justify-center text-sm" style="background:#FFF3F0">🤖</div>
+        <p class="font-bold text-gray-800 text-sm">Análisis Comparativo con IA</p>
+      </div>
+      <div id="rappi-analysis" class="md-body text-sm text-gray-700 leading-relaxed">
+        <span id="rappi-cursor"></span>
+      </div>
+    </div>
+
+    <!-- Done -->
+    <div id="rappi-done" class="hidden rounded-2xl px-5 py-4 flex items-center gap-4" style="background:linear-gradient(135deg,#ECFDF5,#D1FAE5);border:1.5px solid #6EE7B7">
+      <span class="text-2xl">✅</span>
+      <div>
+        <p class="font-bold text-green-800 text-sm">¡Comparación completada!</p>
+        <p class="text-xs text-green-600 mt-0.5">Revisa el análisis para encontrar oportunidades de mejora frente a tus competidores.</p>
+      </div>
+    </div>
+
+  </div><!-- end tab-rappi -->
+
+  <!-- ══ FOOTER ══════════════════════════════════════════════════════════ -->
+  <footer class="max-w-3xl mx-auto px-5 py-8 text-center">
+    <p class="text-xs text-gray-400">Menu Analyzer · powered by <span style="color:#FF441A" class="font-semibold">Claude AI</span></p>
+  </footer>
+
+  <!-- ══ SCRIPTS ══════════════════════════════════════════════════════════ -->
+  <script>
+    // ── Tabs ──────────────────────────────────────────────────────────────
+    function switchTab(tab) {
+      document.getElementById('tab-photos').classList.toggle('hidden', tab !== 'photos');
+      document.getElementById('tab-rappi').classList.toggle('hidden',  tab !== 'rappi');
+      document.getElementById('tab-photos-btn').className = 'tab-btn ' + (tab==='photos' ? 'tab-active-photo' : 'tab-inactive');
+      document.getElementById('tab-rappi-btn').className  = 'tab-btn ' + (tab==='rappi'  ? 'tab-active-rappi'  : 'tab-inactive');
+    }
+
+    // ── File upload ───────────────────────────────────────────────────────
+    let selectedFiles = [];
+
+    function handleFileSelect(fileList) {
+      const valid = Array.from(fileList).filter(f => ['image/jpeg','image/png','image/webp'].includes(f.type));
+      selectedFiles = [...selectedFiles, ...valid];
+      renderThumbs();
+    }
+
+    function removeFile(i) { selectedFiles.splice(i,1); renderThumbs(); }
+
+    function renderThumbs() {
+      const grid  = document.getElementById('thumb-grid');
+      const label = document.getElementById('count-label');
+      const btn   = document.getElementById('analyze-btn');
+      if (!selectedFiles.length) {
+        grid.classList.add('hidden'); label.classList.add('hidden'); btn.disabled=true; grid.innerHTML=''; return;
+      }
+      grid.classList.remove('hidden'); label.classList.remove('hidden'); btn.disabled=false;
+      label.textContent = `${selectedFiles.length} imagen${selectedFiles.length>1?'es':''} lista${selectedFiles.length>1?'s':''}`;
+      grid.innerHTML = selectedFiles.map((f,i) => {
+        const url = URL.createObjectURL(f);
+        return `<div class="thumb-item"><img src="${url}" loading="lazy"/>
+          <span class="thumb-remove" onclick="event.stopPropagation();removeFile(${i})">✕</span></div>`;
+      }).join('');
+    }
+
+    const dz = document.getElementById('drop-zone');
+    dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('drag-over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+    dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('drag-over'); handleFileSelect(e.dataTransfer.files); });
+
+    // ── Photo analysis ────────────────────────────────────────────────────
+    let photoMd = '';
+
+    async function startPhotoAnalysis() {
+      photoMd = '';
+      document.getElementById('result-content').innerHTML = '<span id="cursor"></span>';
+      document.getElementById('extraction-badges').innerHTML = '';
+      document.getElementById('extraction-obs').textContent = '';
+      hide('photo-done'); hide('extraction-card'); hide('result-section');
+      document.getElementById('analyze-btn').disabled = true;
+      show('photo-status');
+      setStatus('photo','⏳','Subiendo imágenes...');
+
+      const form = new FormData();
+      selectedFiles.forEach(f => form.append('files', f, f.name));
+      let resp;
+      try { resp = await fetch('/analyze', {method:'POST', body:form}); }
+      catch(e) { setStatus('photo','❌',`Error: ${e.message}`); document.getElementById('analyze-btn').disabled=false; return; }
+      if (!resp.ok) { setStatus('photo','❌',`Error ${resp.status}`); document.getElementById('analyze-btn').disabled=false; return; }
+
+      setStatus('photo','🔍','Extrayendo items y precios...');
+      await readSSE(resp, {
+        extraction(data) {
+          renderExtraction(data);
+          setStatus('photo','✍️','Generando análisis...');
+          show('result-section');
+        },
+        text(chunk) {
+          photoMd += chunk;
+          document.getElementById('result-content').innerHTML = marked.parse(photoMd) + '<span id="cursor"></span>';
+        },
+        done() {
+          document.getElementById('result-content').innerHTML = marked.parse(photoMd);
+          hide('photo-status'); show('photo-done');
+          document.getElementById('analyze-btn').disabled = false;
+        },
+        error(msg) { setStatus('photo','❌', msg); document.getElementById('analyze-btn').disabled=false; },
+      });
+    }
+
+    function renderExtraction(data) {
+      const badges = [
+        data.restaurant_name  && ['🍽️', data.restaurant_name],
+        data.cuisine_type     && ['🌍', data.cuisine_type],
+        data.total_items_found != null && ['📋', `${data.total_items_found} items`],
+        (data.price_range_min != null && data.price_range_max != null) &&
+          ['💵', `${data.currency||''}${data.price_range_min}–${data.currency||''}${data.price_range_max}`],
+        ['📷', `${(data.items||[]).filter(i=>i.has_photo).length}/${(data.items||[]).length} con foto`],
+      ].filter(Boolean);
+      document.getElementById('extraction-badges').innerHTML =
+        badges.map(([ic,lb]) => `<span class="stat-badge">${ic} ${lb}</span>`).join('');
+      if (data.observations)
+        document.getElementById('extraction-obs').textContent = `"${data.observations}"`;
+      show('extraction-card');
+    }
+
+    // ── Rappi comparison ──────────────────────────────────────────────────
+    let competitors = [];
+
+    function addCompetitor() {
+      const inp  = document.getElementById('competitor-input');
+      const name = inp.value.trim();
+      if (!name || competitors.includes(name)) { inp.value=''; return; }
+      competitors.push(name);
+      inp.value = '';
+      renderCompetitors();
+    }
+
+    function removeCompetitor(name) {
+      competitors = competitors.filter(c => c !== name);
+      renderCompetitors();
+    }
+
+    function renderCompetitors() {
+      document.getElementById('competitors-list').innerHTML =
+        competitors.map(c => `
+          <span class="comp-tag">🍴 ${c}
+            <button onclick="removeCompetitor('${c.replace(/'/g,"\\'")}')" title="Eliminar">✕</button>
+          </span>`).join('');
+    }
+
+    let rappiMd = '';
+
+    async function startRappiAnalysis() {
+      const main = document.getElementById('main-restaurant').value.trim();
+      if (!main)              { alert('Ingresa el nombre de tu restaurante'); return; }
+      if (!competitors.length){ alert('Agrega al menos un competidor'); return; }
+
+      rappiMd = '';
+      document.getElementById('rappi-analysis').innerHTML = '<span id="rappi-cursor"></span>';
+      document.getElementById('rappi-log').innerHTML = '';
+      document.getElementById('rappi-table').innerHTML = '';
+      hide('rappi-done'); hide('rappi-table-section'); hide('price-index-section'); hide('rappi-analysis-section');
+      document.getElementById('rappi-btn').disabled = true;
+      show('rappi-status');
+      setStatus('rappi','🔄','Iniciando scraping...');
+
+      const body = { main_restaurant:main, competitors, city:document.getElementById('rappi-city').value };
+      let resp;
+      try { resp = await fetch('/rappi-compare', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}); }
+      catch(e) { setStatus('rappi','❌',`Error: ${e.message}`); document.getElementById('rappi-btn').disabled=false; return; }
+      if (!resp.ok) { setStatus('rappi','❌',`Error ${resp.status}`); document.getElementById('rappi-btn').disabled=false; return; }
+
+      setStatus('rappi','🔄','Abriendo navegador...');
+      await readSSE(resp, {
+        log(msg) {
+          const log = document.getElementById('rappi-log');
+          const el = document.createElement('div');
+          el.className = 'log-line' + (msg.includes('✓') ? ' ok' : msg.includes('✗')||msg.includes('Error') ? ' err' : '');
+          el.textContent = msg;
+          log.appendChild(el);
+          log.scrollTop = log.scrollHeight;
+          if (msg.includes('Procesando')||msg.includes('✓'))
+            setStatus('rappi','🔍', msg.slice(0,65));
+        },
+        menus(data) {
+          renderRappiTable(data);
+          renderPriceIndex(data);
+          setStatus('rappi','🤖','Analizando con IA...');
+          show('rappi-analysis-section');
+        },
+        text(chunk) {
+          rappiMd += chunk;
+          document.getElementById('rappi-analysis').innerHTML = marked.parse(rappiMd) + '<span id="rappi-cursor"></span>';
+        },
+        done() {
+          document.getElementById('rappi-analysis').innerHTML = marked.parse(rappiMd);
+          hide('rappi-status'); show('rappi-done');
+          document.getElementById('rappi-btn').disabled = false;
+        },
+        error(msg) { setStatus('rappi','❌', msg); document.getElementById('rappi-btn').disabled=false; },
+      });
+    }
+
+    function renderRappiTable(menus) {
+      if (!menus.length) return;
+      const cats = [
+        ['entradas','🥗'],['principales','🍽️'],['postres','🍮'],
+        ['bebidas','🥤'],['combos','🎁'],['adiciones','➕'],
+      ];
+      const html = menus.map((m, idx) => {
+        const bc  = m.by_category || {};
+        const bp  = m.by_protein  || {};
+        const isMain = idx === 0;
+        const proteins = Object.entries(bp).map(([p,n]) =>
+          `<span class="cat-pill">${p} <b>${n}</b></span>`).join('');
+        const catPills = cats.map(([c,ic]) => bc[c]
+          ? `<span class="cat-pill">${ic} ${c.charAt(0).toUpperCase()+c.slice(1)}: <b>${bc[c]}</b></span>`
+          : '').join('');
+        return `
+          <div class="resto-card ${isMain?'main-card':''}">
+            <div class="flex items-center justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <span style="font-size:1.1rem">${isMain?'⭐':'🍴'}</span>
+                <span class="font-bold text-sm" style="${isMain?'color:#FF441A':'color:#1A1A2E'}">${m.name}</span>
+                ${isMain?'<span style="background:#FF441A;color:white;font-size:.6rem;font-weight:700;padding:2px 7px;border-radius:999px">PRINCIPAL</span>':''}
+                ${m.error?'<span style="color:#EF4444;font-size:.7rem">⚠ error</span>':''}
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-x-4">
+              <div class="resto-stat"><span class="resto-stat-label">Total items</span><span class="resto-stat-value">${m.total_items}</span></div>
+              <div class="resto-stat"><span class="resto-stat-label">Precio prom.</span><span class="resto-stat-value">$${(m.avg_price||0).toLocaleString('es-CO')}</span></div>
+              <div class="resto-stat"><span class="resto-stat-label">Combos</span><span class="resto-stat-value">${m.combo_count}</span></div>
+            </div>
+            <div class="cat-pills mt-2">${catPills}</div>
+            ${proteins ? `<div class="cat-pills mt-1" style="opacity:.7">${proteins}</div>` : ''}
+          </div>`;
+      }).join('');
+      document.getElementById('rappi-table').innerHTML =
+        `<div class="space-y-3">${html}</div>`;
+      show('rappi-table-section');
+    }
+
+    // ── Price index charts ─────────────────────────────────────────────────
+    function renderPriceIndex(menus) {
+      const CATS = [
+        { key:'entradas',    label:'Entradas',    icon:'🥗',  kw:['entrada','starter','ensalada','sopa'] },
+        { key:'principales', label:'Principales', icon:'🍽️', kw:['principal','main','plato','bandeja','ejecutivo'] },
+        { key:'postres',     label:'Postres',     icon:'🍮',  kw:['postre','dessert','dulce','helado','torta'] },
+        { key:'bebidas',     label:'Bebidas',     icon:'🥤',  kw:['bebida','drink','jugo','agua','gaseosa','limonada','té','cafe'] },
+        { key:'combos',      label:'Combos',      icon:'🎁',  kw:['combo','men','especial','paquete','promo'] },
+        { key:'adiciones',   label:'Adiciones',   icon:'➕',  kw:['adicion','adición','adicional','extra','topping','salsa'] },
+      ];
+
+      function classify(item) {
+        const c = (item.category || '').toLowerCase();
+        for (const { key, kw } of CATS) {
+          if (c.includes(key.slice(0,6)) || kw.some(k => c.includes(k))) return key;
+        }
+        return null;
+      }
+
+      // Compute per-restaurant per-category avg price
+      const stats = menus.map((m, idx) => {
+        const buckets = {};
+        CATS.forEach(({ key }) => buckets[key] = []);
+        (m.items || []).forEach(it => {
+          if (!it.price || it.price <= 0) return;
+          const k = classify(it);
+          if (k) buckets[k].push(it.price);
+        });
+        const avg = {};
+        CATS.forEach(({ key }) => {
+          const arr = buckets[key];
+          avg[key] = arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
+        });
+        return { name: m.name, avg, isMain: idx === 0 };
+      });
+
+      const mainStat = stats[0];
+      let html = '';
+
+      CATS.forEach(({ key, label, icon }) => {
+        const mainAvg = mainStat.avg[key];
+        // Skip category if main has no data or no competitor has data
+        const anyData = stats.some(s => s.avg[key] !== null);
+        if (!mainAvg || !anyData) return;
+
+        // Each bar: scale so index 100 = 50% track width; cap display at index 200
+        const barsHtml = stats.map(s => {
+          const avg = s.avg[key];
+          if (avg === null) {
+            return `<div class="pix-bar-row">
+              <span class="pix-bar-label" title="${s.name}">${s.name.slice(0,14)}</span>
+              <span class="pix-bar-track"></span>
+              <span class="pix-bar-val" style="color:#D1D5DB">s/d</span>
+            </div>`;
+          }
+          const idx   = Math.round((avg / mainAvg) * 100);
+          const pct   = Math.min(idx, 200);          // cap at 200
+          const trackW = (pct / 200) * 100;           // 50% track = index 100
+          const color  = s.isMain ? '#FF441A'
+                       : idx <= 95  ? '#10B981'
+                       : idx >= 105 ? '#EF4444'
+                       : '#6B7280';
+          const valTxt = s.isMain ? '100 (base)'
+                       : idx < 100 ? `${idx} ↓ ${100-idx}%`
+                       : idx > 100 ? `${idx} ↑ +${idx-100}%`
+                       : `${idx} ≈`;
+          return `<div class="pix-bar-row">
+            <span class="pix-bar-label" title="${s.name}">${s.name.slice(0,14)}</span>
+            <div class="pix-bar-track">
+              <div class="pix-bar-fill" style="width:${trackW.toFixed(1)}%;background:${color}"></div>
+              <div class="pix-ref-line" style="left:50%"></div>
+            </div>
+            <span class="pix-bar-val" style="color:${color}">${valTxt}</span>
+          </div>`;
+        }).join('');
+
+        html += `<div class="pix-cat-block">
+          <p class="pix-cat-title">${icon} ${label}
+            <span style="font-weight:400;color:#9CA3AF;font-size:.67rem"> — base $${Math.round(mainAvg).toLocaleString('es-CO')} COP</span>
+          </p>
+          ${barsHtml}
+        </div>`;
+      });
+
+      document.getElementById('price-index-charts').innerHTML = html ||
+        '<p class="text-xs text-gray-400 italic">No hay suficientes datos para calcular índices por categoría.</p>';
+      show('price-index-section');
+    }
+
+    // ── SSE helper ────────────────────────────────────────────────────────
+    async function readSSE(resp, handlers) {
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while(true) {
+        const {done, value} = await reader.read();
+        if(done) break;
+        buf += dec.decode(value, {stream:true});
+        const parts = buf.split('\n\n');
+        buf = parts.pop();
+        for(const part of parts) {
+          let type='message', data='';
+          for(const line of part.split('\n')) {
+            if(line.startsWith('event: ')) type=line.slice(7).trim();
+            else if(line.startsWith('data: ')) data=line.slice(6);
+          }
+          if(!data) continue;
+          const h = handlers[type];
+          if(h) h(JSON.parse(data));
+        }
+      }
+    }
+
+    // ── Utils ──────────────────────────────────────────────────────────────
+    function show(id) { document.getElementById(id).classList.remove('hidden'); }
+    function hide(id) { document.getElementById(id).classList.add('hidden'); }
+    function setStatus(prefix, icon, text) {
+      document.getElementById(`${prefix}-status-icon`).textContent = icon;
+      document.getElementById(`${prefix}-status-text`).textContent = text.slice(0,80);
+    }
+  </script>
+</body>
+</html>
