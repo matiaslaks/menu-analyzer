@@ -1,9 +1,0 @@
-[build]
-builder = "nixpacks"
-buildCommand = "pip install -r requirements.txt && playwright install chromium && playwright install-deps chromium"
-
-[deploy]
-startCommand = "python server.py"
-healthcheckPath = "/"
-healthcheckTimeout = 30
-restartPolicyType = "on_failure"
