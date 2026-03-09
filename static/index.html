@@ -715,6 +715,7 @@
         </div>`;
 
       const element = document.createElement('div');
+      element.style.cssText = 'position:fixed;top:0;left:0;width:794px;background:#ffffff;opacity:0;pointer-events:none;z-index:-1;';
       element.innerHTML = html;
       document.body.appendChild(element);
 
@@ -723,10 +724,15 @@
         margin: [12, 10, 12, 10],
         filename,
         image: { type:'jpeg', quality:0.95 },
-        html2canvas: { scale:2, useCORS:true, logging:false },
+        html2canvas: { scale:2, useCORS:true, logging:false, backgroundColor:'#ffffff', windowWidth:794, scrollY:0, scrollX:0 },
         jsPDF: { unit:'mm', format:'a4', orientation:'portrait' },
-        pagebreak: { mode:['avoid-all','css'] },
+        pagebreak: { mode:['css','legacy'] },
       }).from(element).save().then(() => {
+        document.body.removeChild(element);
+        btn.innerHTML = '📄 Descargar PDF';
+        btn.disabled = false;
+      }).catch(err => {
+        console.error('PDF error:', err);
         document.body.removeChild(element);
         btn.innerHTML = '📄 Descargar PDF';
         btn.disabled = false;
