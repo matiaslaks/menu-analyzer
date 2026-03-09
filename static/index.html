@@ -8,6 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Nunito:wght@800;900&display=swap" rel="stylesheet"/>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
   <script>
     tailwind.config = {
       theme: { extend: {
@@ -351,12 +352,20 @@
     </div>
 
     <!-- Done -->
-    <div id="rappi-done" class="hidden rounded-2xl px-5 py-4 flex items-center gap-4" style="background:linear-gradient(135deg,#ECFDF5,#D1FAE5);border:1.5px solid #6EE7B7">
-      <span class="text-2xl">✅</span>
-      <div>
-        <p class="font-bold text-green-800 text-sm">¡Comparación completada!</p>
-        <p class="text-xs text-green-600 mt-0.5">Revisa el análisis para encontrar oportunidades de mejora frente a tus competidores.</p>
+    <div id="rappi-done" class="hidden rounded-2xl px-5 py-4 flex items-center justify-between gap-4" style="background:linear-gradient(135deg,#ECFDF5,#D1FAE5);border:1.5px solid #6EE7B7">
+      <div class="flex items-center gap-4">
+        <span class="text-2xl">✅</span>
+        <div>
+          <p class="font-bold text-green-800 text-sm">¡Comparación completada!</p>
+          <p class="text-xs text-green-600 mt-0.5">Revisa el análisis para encontrar oportunidades de mejora frente a tus competidores.</p>
+        </div>
       </div>
+      <button onclick="downloadRappiPDF()" id="pdf-btn"
+        style="background:linear-gradient(135deg,#FF441A,#FF6B35);color:white;font-weight:700;border-radius:.75rem;padding:10px 18px;font-size:.8rem;white-space:nowrap;box-shadow:0 4px 14px rgba(255,68,26,.35);transition:all .2s;display:flex;align-items:center;gap:6px;flex-shrink:0"
+        onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 20px rgba(255,68,26,.5)'"
+        onmouseout="this.style.transform='';this.style.boxShadow='0 4px 14px rgba(255,68,26,.35)'">
+        📄 Descargar PDF
+      </button>
     </div>
 
   </div><!-- end tab-rappi -->
@@ -490,6 +499,7 @@
     }
 
     let rappiMd = '';
+    let rappiMenusData = [];
 
     async function startRappiAnalysis() {
       const main = document.getElementById('main-restaurant').value.trim();
@@ -497,6 +507,7 @@
       if (!competitors.length){ alert('Agrega al menos un competidor'); return; }
 
       rappiMd = '';
+      rappiMenusData = [];
       document.getElementById('rappi-analysis').innerHTML = '<span id="rappi-cursor"></span>';
       document.getElementById('rappi-log').innerHTML = '';
       document.getElementById('rappi-table').innerHTML = '';
@@ -524,6 +535,7 @@
             setStatus('rappi','🔍', msg.slice(0,65));
         },
         menus(data) {
+          rappiMenusData = data;
           renderRappiTable(data);
           renderPriceIndex(data);
           setStatus('rappi','🤖','Analizando con IA...');
@@ -579,6 +591,146 @@
       document.getElementById('rappi-table').innerHTML =
         `<div class="space-y-3">${html}</div>`;
       show('rappi-table-section');
+    }
+
+    // ── PDF Export ────────────────────────────────────────────────────────
+    function downloadRappiPDF() {
+      const btn = document.getElementById('pdf-btn');
+      btn.textContent = '⏳ Generando PDF...';
+      btn.disabled = true;
+
+      const mainName = document.getElementById('main-restaurant').value.trim();
+      const city     = document.getElementById('rappi-city').value;
+      const date     = new Date().toLocaleDateString('es-CO', { year:'numeric', month:'long', day:'numeric' });
+
+      // ── Build restaurant summary table ──────────────────────────────────
+      const CATS = ['entradas','principales','postres','bebidas','combos','adiciones'];
+      const summaryRows = rappiMenusData.map((m, idx) => {
+        const bc = m.by_category || {};
+        const isMain = idx === 0;
+        const catCells = CATS.map(c => `<td style="padding:6px 10px;border-bottom:1px solid #F3F4F6;text-align:center">${bc[c] || 0}</td>`).join('');
+        return `<tr style="${isMain ? 'background:#FFF3F0;font-weight:700' : ''}">
+          <td style="padding:6px 10px;border-bottom:1px solid #F3F4F6;font-weight:${isMain?700:500}">${isMain ? '⭐ ' : ''}${m.name}</td>
+          <td style="padding:6px 10px;border-bottom:1px solid #F3F4F6;text-align:center">${m.total_items}</td>
+          <td style="padding:6px 10px;border-bottom:1px solid #F3F4F6;text-align:center">$${(m.avg_price||0).toLocaleString('es-CO')}</td>
+          ${catCells}
+        </tr>`;
+      }).join('');
+
+      // ── Build price index table ─────────────────────────────────────────
+      const PIX_CATS = [
+        { key:'entradas', label:'Entradas', kw:['entrada','starter','ensalada','sopa'] },
+        { key:'principales', label:'Principales', kw:['principal','main','plato','bandeja','ejecutivo'] },
+        { key:'postres', label:'Postres', kw:['postre','dessert','dulce','helado','torta'] },
+        { key:'bebidas', label:'Bebidas', kw:['bebida','drink','jugo','agua','gaseosa','limonada','café','cafe'] },
+        { key:'combos', label:'Combos', kw:['combo','men','especial','paquete','promo'] },
+        { key:'adiciones', label:'Adiciones', kw:['adicion','adicional','extra','topping','salsa'] },
+      ];
+      function classifyPDF(item) {
+        const c = (item.category||'').toLowerCase();
+        for (const { key, kw } of PIX_CATS) {
+          if (c.includes(key.slice(0,6)) || kw.some(k => c.includes(k))) return key;
+        }
+        return null;
+      }
+      const pixStats = rappiMenusData.map((m, idx) => {
+        const buckets = {};
+        PIX_CATS.forEach(({ key }) => buckets[key] = []);
+        (m.items || []).forEach(it => {
+          if (!it.price || it.price <= 0) return;
+          const k = classifyPDF(it);
+          if (k) buckets[k].push(it.price);
+        });
+        const avg = {};
+        PIX_CATS.forEach(({ key }) => {
+          const arr = buckets[key];
+          avg[key] = arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
+        });
+        return { name: m.name, avg, isMain: idx === 0 };
+      });
+      const mainPix = pixStats[0];
+      let pixRows = '';
+      PIX_CATS.forEach(({ key, label }) => {
+        if (!mainPix.avg[key]) return;
+        const cells = pixStats.map(s => {
+          if (s.avg[key] === null) return `<td style="padding:5px 8px;text-align:center;color:#9CA3AF">s/d</td>`;
+          const idx = Math.round((s.avg[key] / mainPix.avg[key]) * 100);
+          const color = s.isMain ? '#FF441A' : idx <= 95 ? '#059669' : idx >= 105 ? '#DC2626' : '#374151';
+          const txt = s.isMain ? '100 (base)' : `${idx}${idx<100?' ↓':' ↑'}`;
+          return `<td style="padding:5px 8px;text-align:center;color:${color};font-weight:${s.isMain?700:600}">${txt}</td>`;
+        }).join('');
+        pixRows += `<tr><td style="padding:5px 8px;font-weight:600;border-bottom:1px solid #F3F4F6">${label}</td>${cells}</tr>`;
+      });
+      const pixHeaders = rappiMenusData.map((m,i) =>
+        `<th style="padding:7px 8px;background:#1A1A2E;color:white;font-size:11px">${i===0?'⭐ ':''}${m.name.slice(0,18)}</th>`
+      ).join('');
+
+      // ── Assemble HTML ───────────────────────────────────────────────────
+      const html = `
+        <div style="font-family:'Inter',Arial,sans-serif;color:#1A1A2E;max-width:780px;margin:0 auto">
+
+          <!-- Header -->
+          <div style="background:linear-gradient(135deg,#1A1A2E 0%,#0F3460 100%);border-radius:14px;padding:28px 32px;margin-bottom:28px;color:white">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+              <span style="font-family:Arial,sans-serif;font-weight:900;font-size:22px;color:white;letter-spacing:-1px">rappi</span>
+              <span style="color:rgba(255,255,255,.3);font-size:20px">|</span>
+              <span style="font-weight:800;font-size:18px">Menu<span style="color:#FF441A">Analyzer</span></span>
+            </div>
+            <h1 style="font-size:22px;font-weight:800;margin:0 0 6px">Análisis Competitivo de Menú</h1>
+            <p style="margin:0;color:#94A3B8;font-size:13px">Restaurante principal: <b style="color:white">${mainName}</b> · ${city} · ${date}</p>
+          </div>
+
+          <!-- Summary table -->
+          <h2 style="font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF;margin-bottom:10px">1. Resumen Comparativo</h2>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:28px">
+            <thead>
+              <tr style="background:#1A1A2E;color:white">
+                <th style="padding:8px 10px;text-align:left;font-size:11px">Restaurante</th>
+                <th style="padding:8px 10px;text-align:center;font-size:11px">Items</th>
+                <th style="padding:8px 10px;text-align:center;font-size:11px">Precio prom.</th>
+                ${CATS.map(c=>`<th style="padding:8px 10px;text-align:center;font-size:11px">${c.charAt(0).toUpperCase()+c.slice(1)}</th>`).join('')}
+              </tr>
+            </thead>
+            <tbody>${summaryRows}</tbody>
+          </table>
+
+          <!-- Price index table -->
+          <h2 style="font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF;margin-bottom:6px">2. Índice de Precios por Categoría</h2>
+          <p style="font-size:11px;color:#6B7280;margin-bottom:10px">Restaurante principal = 100 (base). Valores &lt; 100 = más barato · Valores &gt; 100 = más caro.</p>
+          <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:28px">
+            <thead><tr><th style="padding:7px 8px;background:#1A1A2E;color:white;text-align:left;font-size:11px">Categoría</th>${pixHeaders}</tr></thead>
+            <tbody>${pixRows || '<tr><td colspan="99" style="padding:8px;color:#9CA3AF;font-style:italic">Sin datos suficientes</td></tr>'}</tbody>
+          </table>
+
+          <!-- AI Analysis -->
+          <h2 style="font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#9CA3AF;margin-bottom:14px">3. Análisis con Inteligencia Artificial</h2>
+          <div style="font-size:12.5px;line-height:1.75;color:#374151">
+            ${document.getElementById('rappi-analysis').innerHTML}
+          </div>
+
+          <!-- Footer -->
+          <div style="margin-top:36px;padding-top:16px;border-top:1px solid #E5E7EB;text-align:center;color:#9CA3AF;font-size:10px">
+            Generado por rappi MenuAnalyzer · powered by Claude AI · ${date}
+          </div>
+        </div>`;
+
+      const element = document.createElement('div');
+      element.innerHTML = html;
+      document.body.appendChild(element);
+
+      const filename = `analisis-${mainName.replace(/\s+/g,'-').toLowerCase()}-${new Date().toISOString().slice(0,10)}.pdf`;
+      html2pdf().set({
+        margin: [12, 10, 12, 10],
+        filename,
+        image: { type:'jpeg', quality:0.95 },
+        html2canvas: { scale:2, useCORS:true, logging:false },
+        jsPDF: { unit:'mm', format:'a4', orientation:'portrait' },
+        pagebreak: { mode:['avoid-all','css'] },
+      }).from(element).save().then(() => {
+        document.body.removeChild(element);
+        btn.innerHTML = '📄 Descargar PDF';
+        btn.disabled = false;
+      });
     }
 
     // ── Price index charts ─────────────────────────────────────────────────
