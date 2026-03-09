@@ -29,3 +29,7 @@ cmds = [
   "pip install -r requirements.txt",
   "playwright install chromium",
 ]
+
+[start]
+cmd = "python server.py"
+
