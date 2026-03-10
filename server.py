@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Generator
 
 import anthropic
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, File, UploadFile, Request
+from fastapi.responses import HTMLResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -29,7 +29,7 @@ ALLOWED_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 # Tokens reservados para el thinking interno de Claude
 THINKING_BUDGET = 8000
-# Max tokens totales (thinking + respuesta)
+# Max tokens totales
 MAX_TOKENS = 16000
 
 
@@ -148,7 +148,6 @@ Please provide a comprehensive analysis in Spanish with the following sections:
             with client.messages.stream(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
-                thinking={"type": "enabled", "budget_tokens": THINKING_BUDGET},
                 messages=[{"role": "user", "content": rec_content}],
             ) as stream:
                 for event in stream:
@@ -339,7 +338,6 @@ Acciones concretas ordenadas por impacto, con métricas de éxito.
             with client.messages.stream(
                 model=MODEL,
                 max_tokens=MAX_TOKENS,
-                thinking={"type": "enabled", "budget_tokens": THINKING_BUDGET},
                 messages=[{"role": "user", "content": prompt}],
             ) as stream:
                 for event in stream:
@@ -356,6 +354,79 @@ Acciones concretas ordenadas por impacto, con métricas de éxito.
         event_stream(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/suggest-restaurants")
+async def suggest_restaurants(q: str, city: str = "Bogotá"):
+    """Search Rappi for restaurant name suggestions."""
+    if len(q.strip()) < 2:
+        return {"suggestions": []}
+
+    from playwright.async_api import async_playwright
+
+    suggestions = []
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+            )
+            context = await browser.new_context(
+                viewport={"width": 1280, "height": 800},
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                locale="es-CO",
+            )
+            page = await context.new_page()
+            await page.goto(f"https://www.rappi.com.co/restaurantes?query={q}", wait_until="domcontentloaded", timeout=20000)
+            await page.wait_for_timeout(3000)
+
+            seen = set()
+            elements = await page.query_selector_all('a[href*="/restaurantes/"]')
+            for el in elements:
+                try:
+                    text = (await el.inner_text()).split("\n")[0].strip()
+                    href = await el.get_attribute("href") or ""
+                    if text and len(text) > 1 and "/restaurantes/" in href and text not in seen:
+                        seen.add(text)
+                        suggestions.append(text)
+                        if len(suggestions) >= 6:
+                            break
+                except Exception:
+                    continue
+
+            await browser.close()
+    except Exception:
+        pass
+
+    return {"suggestions": suggestions}
+
+
+class PDFRequest(BaseModel):
+    html: str
+    filename: str = "reporte.pdf"
+
+
+@app.post("/generate-pdf")
+async def generate_pdf(req: PDFRequest):
+    """Render HTML to PDF using Playwright and return the file."""
+    from playwright.async_api import async_playwright
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        page = await browser.new_page(viewport={"width": 794, "height": 1123})
+        await page.set_content(req.html, wait_until="networkidle")
+        pdf_bytes = await page.pdf(
+            format="A4",
+            margin={"top": "12mm", "bottom": "12mm", "left": "10mm", "right": "10mm"},
+            print_background=True,
+        )
+        await browser.close()
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{req.filename}"'},
     )
 
 

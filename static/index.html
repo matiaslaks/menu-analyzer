@@ -108,6 +108,12 @@
     /* ── Input ── */
     .rappi-input { border:1.5px solid #E5E7EB; border-radius:.75rem; padding:10px 14px; font-size:.875rem; transition:border .2s; outline:none; font-family:inherit; width:100%; }
     .rappi-input:focus { border-color:#FF441A; box-shadow:0 0 0 3px rgba(255,68,26,.12); }
+    .suggestions-dropdown { position:absolute; top:100%; left:0; right:0; background:white; border:1.5px solid #E5E7EB; border-radius:.75rem; box-shadow:0 8px 24px rgba(0,0,0,.12); z-index:50; margin-top:4px; overflow:hidden; }
+    .suggestions-dropdown.hidden { display:none; }
+    .suggestion-item { padding:10px 14px; font-size:.875rem; cursor:pointer; border-bottom:1px solid #F3F4F6; transition:background .15s; }
+    .suggestion-item:last-child { border-bottom:none; }
+    .suggestion-item:hover { background:#FFF3F0; color:#FF441A; }
+    .suggestion-loading { padding:10px 14px; font-size:.8rem; color:#9CA3AF; font-style:italic; }
 
     /* ── Section label ── */
     .section-label { font-size:.7rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#9CA3AF; }
@@ -282,18 +288,26 @@
         </div>
 
         <!-- Main restaurant -->
-        <div>
+        <div class="relative">
           <label class="section-label block mb-2">Tu restaurante <span style="color:#FF441A">(principal)</span></label>
-          <input id="main-restaurant" type="text" placeholder="Ej: El Corral, Crepes & Waffles..." class="rappi-input"/>
+          <input id="main-restaurant" type="text" placeholder="Ej: El Corral, Crepes & Waffles..." class="rappi-input" autocomplete="off"
+            oninput="debounceSuggest(this.value, 'main-suggestions', document.getElementById('rappi-city').value)"
+            onblur="setTimeout(()=>hideSuggestions('main-suggestions'),200)"/>
+          <div id="main-suggestions" class="suggestions-dropdown hidden"></div>
         </div>
 
         <!-- Competitors -->
         <div>
           <label class="section-label block mb-2">Competidores</label>
-          <div class="flex gap-2">
-            <input id="competitor-input" type="text" placeholder="Nombre del competidor..."
-              class="rappi-input flex-1"
-              onkeydown="if(event.key==='Enter')addCompetitor()"/>
+          <div class="flex gap-2 relative">
+            <div class="relative flex-1">
+              <input id="competitor-input" type="text" placeholder="Nombre del competidor..."
+                class="rappi-input w-full" autocomplete="off"
+                oninput="debounceSuggest(this.value, 'competitor-suggestions', document.getElementById('rappi-city').value)"
+                onblur="setTimeout(()=>hideSuggestions('competitor-suggestions'),200)"
+                onkeydown="if(event.key==='Enter')addCompetitor()"/>
+              <div id="competitor-suggestions" class="suggestions-dropdown hidden"></div>
+            </div>
             <button onclick="addCompetitor()"
               class="btn-rappi px-5 py-2.5 text-sm whitespace-nowrap">
               + Agregar
@@ -360,12 +374,20 @@
           <p class="text-xs text-green-600 mt-0.5">Revisa el análisis para encontrar oportunidades de mejora frente a tus competidores.</p>
         </div>
       </div>
-      <button onclick="downloadRappiPDF()" id="pdf-btn"
-        style="background:linear-gradient(135deg,#FF441A,#FF6B35);color:white;font-weight:700;border-radius:.75rem;padding:10px 18px;font-size:.8rem;white-space:nowrap;box-shadow:0 4px 14px rgba(255,68,26,.35);transition:all .2s;display:flex;align-items:center;gap:6px;flex-shrink:0"
-        onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 20px rgba(255,68,26,.5)'"
-        onmouseout="this.style.transform='';this.style.boxShadow='0 4px 14px rgba(255,68,26,.35)'">
-        📄 Descargar PDF
-      </button>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <button onclick="resetRappiForm()"
+          style="background:white;color:#374151;font-weight:700;border-radius:.75rem;padding:10px 18px;font-size:.8rem;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.1);transition:all .2s;display:flex;align-items:center;gap:6px;border:1.5px solid #E5E7EB"
+          onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 4px 14px rgba(0,0,0,.15)'"
+          onmouseout="this.style.transform='';this.style.boxShadow='0 2px 8px rgba(0,0,0,.1)'">
+          🔄 Nueva Consulta
+        </button>
+        <button onclick="downloadRappiPDF()" id="pdf-btn"
+          style="background:linear-gradient(135deg,#FF441A,#FF6B35);color:white;font-weight:700;border-radius:.75rem;padding:10px 18px;font-size:.8rem;white-space:nowrap;box-shadow:0 4px 14px rgba(255,68,26,.35);transition:all .2s;display:flex;align-items:center;gap:6px"
+          onmouseover="this.style.transform='translateY(-1px)';this.style.boxShadow='0 6px 20px rgba(255,68,26,.5)'"
+          onmouseout="this.style.transform='';this.style.boxShadow='0 4px 14px rgba(255,68,26,.35)'">
+          📄 Descargar PDF
+        </button>
+      </div>
     </div>
 
   </div><!-- end tab-rappi -->
@@ -474,6 +496,71 @@
     }
 
     // ── Rappi comparison ──────────────────────────────────────────────────
+    function resetRappiForm() {
+      rappiMd = '';
+      rappiMenusData = [];
+      competitors = [];
+      document.getElementById('main-restaurant').value = '';
+      document.getElementById('competitor-input').value = '';
+      document.getElementById('competitors-list').innerHTML = '';
+      document.getElementById('rappi-analysis').innerHTML = '<span id="rappi-cursor"></span>';
+      document.getElementById('rappi-log').innerHTML = '';
+      document.getElementById('rappi-table').innerHTML = '';
+      document.getElementById('price-index-charts').innerHTML = '';
+      document.getElementById('rappi-btn').disabled = false;
+      hide('rappi-done');
+      hide('rappi-table-section');
+      hide('price-index-section');
+      hide('rappi-analysis-section');
+      hide('rappi-status');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ── Autocomplete ──────────────────────────────────────────────────────────
+    let suggestTimers = {};
+
+    function debounceSuggest(value, dropdownId, city) {
+      clearTimeout(suggestTimers[dropdownId]);
+      const dropdown = document.getElementById(dropdownId);
+      if (value.trim().length < 2) { hideSuggestions(dropdownId); return; }
+      dropdown.innerHTML = '<div class="suggestion-loading">Buscando en Rappi...</div>';
+      dropdown.classList.remove('hidden');
+      suggestTimers[dropdownId] = setTimeout(() => {
+        fetchSuggestions(value.trim(), dropdownId, city);
+      }, 700);
+    }
+
+    async function fetchSuggestions(query, dropdownId, city) {
+      const dropdown = document.getElementById(dropdownId);
+      try {
+        const res = await fetch(`/suggest-restaurants?q=${encodeURIComponent(query)}&city=${encodeURIComponent(city)}`);
+        const data = await res.json();
+        if (!data.suggestions || data.suggestions.length === 0) {
+          dropdown.innerHTML = '<div class="suggestion-loading">Sin resultados</div>';
+          return;
+        }
+        dropdown.innerHTML = data.suggestions.map(name =>
+          `<div class="suggestion-item" onmousedown="selectSuggestion('${dropdownId}', '${name.replace(/'/g,"\\'")}')">🍽️ ${name}</div>`
+        ).join('');
+      } catch(e) {
+        hideSuggestions(dropdownId);
+      }
+    }
+
+    function selectSuggestion(dropdownId, name) {
+      if (dropdownId === 'main-suggestions') {
+        document.getElementById('main-restaurant').value = name;
+      } else {
+        document.getElementById('competitor-input').value = name;
+      }
+      hideSuggestions(dropdownId);
+    }
+
+    function hideSuggestions(dropdownId) {
+      const d = document.getElementById(dropdownId);
+      if (d) d.classList.add('hidden');
+    }
+
     let competitors = [];
 
     function addCompetitor() {
@@ -714,26 +801,46 @@
           </div>
         </div>`;
 
-      const element = document.createElement('div');
-      element.style.cssText = 'position:fixed;top:0;left:0;width:794px;background:#ffffff;opacity:0;pointer-events:none;z-index:-1;';
-      element.innerHTML = html;
-      document.body.appendChild(element);
-
       const filename = `analisis-${mainName.replace(/\s+/g,'-').toLowerCase()}-${new Date().toISOString().slice(0,10)}.pdf`;
-      html2pdf().set({
-        margin: [12, 10, 12, 10],
-        filename,
-        image: { type:'jpeg', quality:0.95 },
-        html2canvas: { scale:2, useCORS:true, logging:false, backgroundColor:'#ffffff', windowWidth:794, scrollY:0, scrollX:0 },
-        jsPDF: { unit:'mm', format:'a4', orientation:'portrait' },
-        pagebreak: { mode:['css','legacy'] },
-      }).from(element).save().then(() => {
-        document.body.removeChild(element);
+
+      // Wrap html in a full HTML document for Playwright
+      const fullHtml = `<!DOCTYPE html><html><head>
+        <meta charset="UTF-8">
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body { font-family: 'Arial', sans-serif; background: #ffffff; }
+          table { border-collapse: collapse; }
+          h2, h3 { margin: 16px 0 8px; }
+          p { margin: 6px 0; }
+          ul, ol { margin: 6px 0 6px 20px; }
+          li { margin: 3px 0; }
+          pre { white-space: pre-wrap; word-break: break-word; }
+          code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+        </style>
+      </head><body>${html}</body></html>`;
+
+      fetch('/generate-pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ html: fullHtml, filename }),
+      })
+      .then(res => {
+        if (!res.ok) throw new Error('Error generando PDF');
+        return res.blob();
+      })
+      .then(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
         btn.innerHTML = '📄 Descargar PDF';
         btn.disabled = false;
-      }).catch(err => {
+      })
+      .catch(err => {
         console.error('PDF error:', err);
-        document.body.removeChild(element);
+        alert('Error generando PDF. Intenta de nuevo.');
         btn.innerHTML = '📄 Descargar PDF';
         btn.disabled = false;
       });
