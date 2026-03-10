@@ -359,7 +359,7 @@ Acciones concretas ordenadas por impacto, con métricas de éxito.
 
 @app.get("/suggest-restaurants")
 async def suggest_restaurants(q: str, city: str = "Bogotá"):
-    """Search Rappi for restaurant name suggestions."""
+    """Search Rappi for restaurant name suggestions using the search bar."""
     if len(q.strip()) < 2:
         return {"suggestions": []}
 
@@ -378,22 +378,103 @@ async def suggest_restaurants(q: str, city: str = "Bogotá"):
                 locale="es-CO",
             )
             page = await context.new_page()
-            await page.goto(f"https://www.rappi.com.co/restaurantes?query={q}", wait_until="domcontentloaded", timeout=20000)
-            await page.wait_for_timeout(3000)
+            await page.goto("https://www.rappi.com.co", wait_until="domcontentloaded", timeout=25000)
+            await page.wait_for_timeout(2000)
 
-            seen = set()
-            elements = await page.query_selector_all('a[href*="/restaurantes/"]')
-            for el in elements:
+            # ── Step 1: Handle location modal if Rappi asks for address/city ──
+            loc_sels = [
+                'input[placeholder*="direcci" i]',
+                'input[placeholder*="ciudad" i]',
+                'input[placeholder*="Escribe tu direcci" i]',
+                '[data-testid="address-input"]',
+                'input[placeholder*="ingresa" i]',
+            ]
+            for sel in loc_sels:
                 try:
-                    text = (await el.inner_text()).split("\n")[0].strip()
-                    href = await el.get_attribute("href") or ""
-                    if text and len(text) > 1 and "/restaurantes/" in href and text not in seen:
-                        seen.add(text)
-                        suggestions.append(text)
-                        if len(suggestions) >= 6:
+                    loc_inp = await page.query_selector(sel)
+                    if loc_inp:
+                        await loc_inp.click()
+                        await loc_inp.fill(city)
+                        await page.wait_for_timeout(1500)
+                        # Click first autocomplete suggestion
+                        for ss in ['[data-testid*="suggestion"]', 'li[class*="suggestion" i]', 'div[role="option"]', 'li[role="option"]']:
+                            try:
+                                sugg = await page.query_selector(ss)
+                                if sugg:
+                                    await sugg.click()
+                                    await page.wait_for_timeout(1500)
+                                    break
+                            except Exception:
+                                pass
+                        break
+                except Exception:
+                    pass
+
+            # ── Step 2: Click search icon/button ──────────────────────────────
+            for btn_sel in ['[data-testid*="search-button"]', 'button[aria-label*="buscar" i]', 'button[class*="search" i]', 'a[href*="search"]']:
+                try:
+                    btn = await page.query_selector(btn_sel)
+                    if btn:
+                        await btn.click()
+                        await page.wait_for_timeout(600)
+                        break
+                except Exception:
+                    pass
+
+            # ── Step 3: Find the restaurant search bar (not the location bar) ──
+            inp = None
+            for sel in [
+                'input[placeholder*="restaurante" i]',
+                'input[placeholder*="Buscar restaurante" i]',
+                'input[placeholder*="Buscar" i]',
+                'input[type="search"]',
+                '[data-testid*="search"] input',
+                'input[placeholder*="buscar" i]',
+            ]:
+                try:
+                    candidate = await page.wait_for_selector(sel, timeout=4000)
+                    if candidate:
+                        # Ensure it's not the location/address input
+                        placeholder = await candidate.get_attribute("placeholder") or ""
+                        placeholder_lower = placeholder.lower()
+                        if "direcci" not in placeholder_lower and "ciudad" not in placeholder_lower and "ingresa" not in placeholder_lower:
+                            inp = candidate
                             break
                 except Exception:
-                    continue
+                    pass
+
+            if inp:
+                await inp.click()
+                await inp.fill(q)
+                # Wait longer for search results to appear
+                await page.wait_for_timeout(3000)
+
+                seen = set()
+                for sel in [
+                    '[data-testid*="store-card"]',
+                    '[data-testid*="restaurant"]',
+                    'a[href*="/restaurantes/"]',
+                    '[class*="StoreCard" i]',
+                    '[class*="store-card" i]',
+                    '[class*="RestaurantCard" i]',
+                ]:
+                    try:
+                        elements = await page.query_selector_all(sel)
+                        for el in elements:
+                            try:
+                                text = (await el.inner_text()).split("\n")[0].strip()
+                                # No strict relevance filter — Rappi's own search handles that
+                                if text and 2 <= len(text) <= 80 and text not in seen:
+                                    seen.add(text)
+                                    suggestions.append(text)
+                                    if len(suggestions) >= 6:
+                                        break
+                            except Exception:
+                                continue
+                        if len(suggestions) >= 6:
+                            break
+                    except Exception:
+                        continue
 
             await browser.close()
     except Exception:
